@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "android:init": "tauri android init && node scripts/configure-android.mjs",
     "android:dev": "node scripts/configure-android.mjs && tauri android dev",
-    "android:build": "node scripts/configure-android.mjs && tauri android build --aab"
+    "android:build": "node scripts/configure-android.mjs && tauri android build --apk"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
