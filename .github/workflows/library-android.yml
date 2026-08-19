@@ -64,7 +64,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t APKS < <(find src-tauri/gen/android/app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print)
+          mapfile -t APKS < <(find src-tauri/gen/android/app/build/outputs/apk -type f -path '*/release/*.apk' -print)
 
           if [ "${#APKS[@]}" -ne 1 ]; then
             echo "::error::Expected exactly one release APK, found ${#APKS[@]}."
