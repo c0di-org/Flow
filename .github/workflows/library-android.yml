@@ -57,8 +57,7 @@ jobs:
           test ! -f src-tauri/gen/android/keystore.properties
 
       - name: Build unsigned release APK
-        working-directory: src-tauri/gen/android
-        run: ./gradlew assembleRelease
+        run: npx tauri android build --apk --ci
 
       - name: Verify and stage exactly one unsigned APK
         shell: bash
