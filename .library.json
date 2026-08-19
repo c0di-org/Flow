@@ -1,0 +1,13 @@
+{
+  "name": "Flow",
+  "tagline": "A fast, photo-first infinite canvas.",
+  "description": "Flow is a fast, photo-first infinite canvas for arranging images, notes, shapes, drawings, and connections in a flexible visual workspace.",
+  "category": "Utilities",
+  "featured": false,
+  "sourceVisible": false,
+  "provenance": "library-managed",
+  "managedSigning": {
+    "packageName": "com.garfbargle.flow",
+    "tagPrefix": "v"
+  }
+}
