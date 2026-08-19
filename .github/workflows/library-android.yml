@@ -1,0 +1,96 @@
+name: Build Library APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-library-apk:
+    runs-on: ubuntu-24.04
+    env:
+      CI: "true"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Configure Android NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "$ANDROID_HOME/ndk"
+          NDK_VERSION="$(ls -1 "$ANDROID_HOME/ndk" | sort -V | tail -n 1)"
+          test -n "$NDK_VERSION"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Install frontend dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Initialize Android project
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx tauri android init --ci
+          node scripts/configure-android.mjs
+          grep -F 'applicationId = "com.garfbargle.flow"' src-tauri/gen/android/app/build.gradle.kts
+          test ! -f src-tauri/gen/android/keystore.properties
+
+      - name: Build unsigned release APK
+        working-directory: src-tauri/gen/android
+        run: ./gradlew assembleRelease
+
+      - name: Verify and stage exactly one unsigned APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t APKS < <(find src-tauri/gen/android/app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print)
+
+          if [ "${#APKS[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one release APK, found ${#APKS[@]}."
+            printf '%s\n' "${APKS[@]}"
+            exit 1
+          fi
+
+          APK="${APKS[0]}"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
+          if [ -z "$APKSIGNER" ]; then
+            echo "::error::Could not locate apksigner to verify the release is unsigned."
+            exit 1
+          fi
+
+          if "$APKSIGNER" verify "$APK" >/dev/null 2>&1; then
+            echo "::error::Release APK is signed. Library requires an unsigned APK."
+            exit 1
+          fi
+
+          mkdir -p library-output
+          cp "$APK" library-output/flow-release-unsigned.apk
+
+      - name: Upload APK for Library
+        uses: actions/upload-artifact@v4
+        with:
+          name: library-unsigned-apk
+          path: library-output/flow-release-unsigned.apk
+          if-no-files-found: error
+          retention-days: 14
