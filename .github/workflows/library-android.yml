@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
-      should-build: ${{ steps.version.outputs.should-build }}
+      should_build: ${{ steps.version.outputs.should_build }}
       version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout
@@ -82,7 +82,7 @@ jobs:
             previous = JSON.parse(oldPackage).version;
           } catch (error) {
             console.log('Could not read the previous package.json; skipping release build.');
-            fs.appendFileSync(output, `should-build=false\nversion=${current}\n`);
+            fs.appendFileSync(output, `should_build=false\nversion=${current}\n`);
             process.exit(0);
           }
 
@@ -90,12 +90,12 @@ jobs:
           console.log(`Previous version: ${previous}`);
           console.log(`Current version:  ${current}`);
           console.log(shouldBuild ? 'Version increased; release build enabled.' : 'Version did not increase; release build skipped.');
-          fs.appendFileSync(output, `should-build=${shouldBuild}\nversion=${current}\n`);
+          fs.appendFileSync(output, `should_build=${shouldBuild}\nversion=${current}\n`);
           NODE
 
   build-library-apk:
     needs: release-check
-    if: needs.release-check.outputs.should-build == 'true'
+    if: needs.release-check.outputs.should_build == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
