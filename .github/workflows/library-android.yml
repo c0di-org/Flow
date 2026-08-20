@@ -1,17 +1,103 @@
-name: Build Library APK
+name: Release Library APK
 
 on:
   push:
     branches: [main]
-  workflow_dispatch:
+    paths:
+      - package.json
 
 permissions:
   contents: read
 
 jobs:
-  build-library-apk:
+  release-check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 5
+    outputs:
+      should-build: ${{ steps.version.outputs.should-build }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for version increase
+        id: version
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+          const { execFileSync } = require('child_process');
+
+          const before = process.env.BEFORE_SHA;
+          const output = process.env.GITHUB_OUTPUT;
+          const current = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
+
+          function parseSemver(version) {
+            const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(version);
+            if (!match) throw new Error(`Invalid semver: ${version}`);
+            return {
+              major: Number(match[1]),
+              minor: Number(match[2]),
+              patch: Number(match[3]),
+              pre: match[4] ? match[4].split('.') : []
+            };
+          }
+
+          function compareIdentifier(a, b) {
+            const aNum = /^\d+$/.test(a);
+            const bNum = /^\d+$/.test(b);
+            if (aNum && bNum) return Number(a) - Number(b);
+            if (aNum) return -1;
+            if (bNum) return 1;
+            return a === b ? 0 : (a > b ? 1 : -1);
+          }
+
+          function compareSemver(a, b) {
+            const av = parseSemver(a);
+            const bv = parseSemver(b);
+            for (const key of ['major', 'minor', 'patch']) {
+              if (av[key] !== bv[key]) return av[key] > bv[key] ? 1 : -1;
+            }
+            if (av.pre.length === 0 && bv.pre.length === 0) return 0;
+            if (av.pre.length === 0) return 1;
+            if (bv.pre.length === 0) return -1;
+            const length = Math.max(av.pre.length, bv.pre.length);
+            for (let i = 0; i < length; i++) {
+              if (av.pre[i] === undefined) return -1;
+              if (bv.pre[i] === undefined) return 1;
+              const cmp = compareIdentifier(av.pre[i], bv.pre[i]);
+              if (cmp !== 0) return cmp > 0 ? 1 : -1;
+            }
+            return 0;
+          }
+
+          let previous;
+          try {
+            const oldPackage = execFileSync('git', ['show', `${before}:package.json`], { encoding: 'utf8' });
+            previous = JSON.parse(oldPackage).version;
+          } catch (error) {
+            console.log('Could not read the previous package.json; skipping release build.');
+            fs.appendFileSync(output, `should-build=false\nversion=${current}\n`);
+            process.exit(0);
+          }
+
+          const shouldBuild = compareSemver(current, previous) > 0;
+          console.log(`Previous version: ${previous}`);
+          console.log(`Current version:  ${current}`);
+          console.log(shouldBuild ? 'Version increased; release build enabled.' : 'Version did not increase; release build skipped.');
+          fs.appendFileSync(output, `should-build=${shouldBuild}\nversion=${current}\n`);
+          NODE
+
+  build-library-apk:
+    needs: release-check
+    if: needs.release-check.outputs.should-build == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     env:
       CI: "true"
 
@@ -90,7 +176,7 @@ jobs:
       - name: Upload APK for Library
         uses: actions/upload-artifact@v4
         with:
-          name: library-unsigned-apk
+          name: library-unsigned-apk-${{ needs.release-check.outputs.version }}
           path: library-output/flow-release-unsigned.apk
           if-no-files-found: error
           retention-days: 14
