@@ -1,6 +1,6 @@
 [package]
 name = "flow"
-version = "0.9.0"
+version = "0.9.1"
 description = "A fast, photo-first infinite canvas"
 authors = ["garfbargle"]
 edition = "2021"
