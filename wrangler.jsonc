@@ -1,0 +1,25 @@
+{
+  // Web build of Flow, served as static assets on flow.c0di.com.
+  //
+  // There is no `main` worker script: the canvas is entirely client-side and
+  // keeps its boards in localStorage plus IndexedDB, so the edge only has to
+  // serve the Vite bundle.
+  //
+  //   npm run build && npx wrangler deploy
+  //
+  // Wrangler is deliberately not a dependency of this project — the Android
+  // release workflow runs `npm install`, and the web deploy has no business
+  // slowing that down.
+  "name": "flow-canvas",
+  "compatibility_date": "2026-08-22",
+  "assets": {
+    "directory": "./dist",
+    // Deep links and reloads must land on the same single-page bundle.
+    "not_found_handling": "single-page-application"
+  },
+  "routes": [
+    { "pattern": "flow.c0di.com", "custom_domain": true }
+  ],
+  "workers_dev": true,
+  "observability": { "enabled": true }
+}

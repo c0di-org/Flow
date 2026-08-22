@@ -1,7 +1,9 @@
 import { Check, Grid3X3, Image, Sparkles } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { isTauri } from '@tauri-apps/api/core';
 import { CanvasView } from './board/CanvasView';
-import { boardStore, useBoard } from './board/store';
+import { boardStore, referencedAssetPaths, useBoard } from './board/store';
+import { pruneWebAssets } from './board/webAssets';
 import { BoardSwitcher } from './components/BoardSwitcher';
 import { Inspector } from './components/Inspector';
 import { Toolbar } from './components/Toolbar';
@@ -25,6 +27,10 @@ export default function App() {
 
   useEffect(() => {
     void boardStore.hydrateNative();
+    if (!isTauri()) {
+      const referenced = referencedAssetPaths();
+      if (referenced) void pruneWebAssets(referenced);
+    }
     const flush = () => boardStore.flush();
     window.addEventListener('pagehide', flush);
     return () => window.removeEventListener('pagehide', flush);

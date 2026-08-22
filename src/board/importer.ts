@@ -1,6 +1,7 @@
 import { Channel, convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { boardStore } from './store';
+import { putWebAsset, webAssetKey, webAssetUrl } from './webAssets';
 import type { PhotoAsset, Point } from './types';
 
 type NativeAsset = {
@@ -38,7 +39,7 @@ function toAsset(asset: NativeAsset): PhotoAsset {
 }
 
 export function assetUrl(path: string) {
-  return isTauri() ? convertFileSrc(path) : path;
+  return isTauri() ? convertFileSrc(path) : webAssetUrl(path);
 }
 
 export async function choosePhotos(): Promise<string[]> {
@@ -97,4 +98,125 @@ export async function importPhotoPaths(
     paths,
     onEvent: channel,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Browser fallback
+//
+// Outside Tauri there is no native dialog and no Rust importer, so the web
+// build picks files with a plain file input, derives the same three variants
+// the Rust importer produces, and stores them via `webAssets`.
+// ---------------------------------------------------------------------------
+
+const PREVIEW_EDGE = 1600;
+const THUMB_EDGE = 420;
+const MICRO_EDGE = 160;
+
+export const IMAGE_PATTERN = /\.(jpe?g|png|webp|gif|bmp|tiff?)$/i;
+
+export function pickPhotoFiles(): Promise<File[]> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.multiple = true;
+    input.style.display = 'none';
+    let settled = false;
+    const finish = (files: File[]) => {
+      if (settled) return;
+      settled = true;
+      input.remove();
+      resolve(files);
+    };
+    input.addEventListener('change', () => finish(input.files ? [...input.files] : []));
+    // A cancelled picker fires no `change` in most browsers; `cancel` covers
+    // the ones that support it so the caller is never left hanging.
+    input.addEventListener('cancel', () => finish([]));
+    document.body.appendChild(input);
+    input.click();
+  });
+}
+
+async function encodeVariant(bitmap: ImageBitmap, edge: number): Promise<Blob> {
+  const scale = Math.min(1, edge / Math.max(bitmap.width, bitmap.height));
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Canvas 2D is unavailable');
+  context.drawImage(bitmap, 0, 0, width, height);
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/webp', 0.85));
+  if (!blob) throw new Error('Could not encode image');
+  return blob;
+}
+
+async function importOneFile(file: File): Promise<PhotoAsset> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    const id = crypto.randomUUID();
+    const [preview, thumbnail, micro] = await Promise.all([
+      encodeVariant(bitmap, PREVIEW_EDGE),
+      encodeVariant(bitmap, THUMB_EDGE),
+      encodeVariant(bitmap, MICRO_EDGE),
+    ]);
+    const previewKey = webAssetKey(id, 'preview');
+    const thumbnailKey = webAssetKey(id, 'thumbnail');
+    const microKey = webAssetKey(id, 'micro');
+    await Promise.all([
+      putWebAsset(previewKey, preview),
+      putWebAsset(thumbnailKey, thumbnail),
+      putWebAsset(microKey, micro),
+    ]);
+    return {
+      id,
+      name: file.name,
+      // The browser cannot keep the untouched original without doubling
+      // storage for no visible gain, so the preview stands in for it.
+      originalPath: previewKey,
+      previewPath: previewKey,
+      thumbnailPath: thumbnailKey,
+      microPath: microKey,
+      pixelWidth: bitmap.width,
+      pixelHeight: bitmap.height,
+      bytes: file.size,
+    };
+  } finally {
+    bitmap.close();
+  }
+}
+
+export async function importPhotoFiles(
+  files: File[],
+  origin: Point,
+  onProgress?: (progress: ImportProgress) => void,
+  onFailure?: (path: string, message: string) => void,
+) {
+  const images = files.filter((file) => file.type.startsWith('image/') || IMAGE_PATTERN.test(file.name));
+  if (!images.length) return;
+
+  const total = images.length;
+  let completed = 0;
+  let failed = 0;
+  const imported: PhotoAsset[] = [];
+  onProgress?.({ total, completed, failed });
+
+  // Sequential: decoding and re-encoding a full-size photo is memory hungry,
+  // and a browser tab has far less headroom than the native importer.
+  for (const file of images) {
+    try {
+      imported.push(await importOneFile(file));
+    } catch (error) {
+      failed++;
+      onFailure?.(file.name, error instanceof Error ? error.message : String(error));
+    }
+    completed++;
+    onProgress?.({ total, completed, failed });
+  }
+
+  if (imported.length) {
+    boardStore.addPhotos(imported, origin);
+    boardStore.flush();
+  }
 }

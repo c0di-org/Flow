@@ -684,3 +684,36 @@ class BoardStore {
 
 export const boardStore = new BoardStore();
 export const useBoard = () => useSyncExternalStore(boardStore.subscribe, boardStore.getSnapshot, boardStore.getSnapshot);
+
+/**
+ * Every photo variant path referenced by any board on this device, including
+ * the open document. The web build feeds this to `pruneWebAssets` so blobs
+ * belonging to deleted boards do not accumulate in IndexedDB.
+ *
+ * Returns null if any stored board cannot be read: an incomplete reference set
+ * would make live photos look like orphans, so the caller must skip the prune
+ * entirely rather than work from partial data.
+ */
+export function referencedAssetPaths(): Set<string> | null {
+  const paths = new Set<string>();
+  const collect = (document: BoardDocument) => {
+    for (const element of document.elements) {
+      if (element.kind !== 'photo') continue;
+      paths.add(element.asset.originalPath);
+      paths.add(element.asset.previewPath);
+      paths.add(element.asset.thumbnailPath);
+      paths.add(element.asset.microPath);
+    }
+  };
+  collect(boardStore.state.document);
+  for (let index = 0; index < localStorage.length; index++) {
+    const key = localStorage.key(index);
+    if (!key || !key.startsWith(BOARD_PREFIX)) continue;
+    try {
+      collect(JSON.parse(localStorage.getItem(key) || '') as BoardDocument);
+    } catch {
+      return null;
+    }
+  }
+  return paths;
+}

@@ -12,7 +12,8 @@ import {
 import type { ComponentType } from 'react';
 import type { Tool } from '../board/types';
 import { boardStore, useBoard } from '../board/store';
-import { choosePhotos, importPhotoPaths } from '../board/importer';
+import { choosePhotos, importPhotoFiles, importPhotoPaths, pickPhotoFiles } from '../board/importer';
+import { isTauri } from '@tauri-apps/api/core';
 import { screenToWorld } from '../board/geometry';
 
 const tools: Array<{ tool: Tool; label: string; key: string; icon: ComponentType<{ size?: number; strokeWidth?: number }> }> = [
@@ -30,20 +31,20 @@ export function Toolbar({ onImportStatus }: { onImportStatus: (text: string | nu
   const state = useBoard();
 
   const addPhotos = async () => {
-    const paths = await choosePhotos();
-    if (!paths.length) return;
+    const selection = isTauri() ? await choosePhotos() : await pickPhotoFiles();
+    if (!selection.length) return;
     const canvasTop = 56;
     const center = screenToWorld({ x: window.innerWidth / 2, y: (window.innerHeight - canvasTop) / 2 }, boardStore.state.camera);
-    onImportStatus(`Importing ${paths.length} photo${paths.length === 1 ? '' : 's'}…`);
+    onImportStatus(`Importing ${selection.length} photo${selection.length === 1 ? '' : 's'}…`);
+    const report = ({ total, completed, failed }: { total: number; completed: number; failed: number }) => {
+      onImportStatus(completed >= total ? (failed ? `Imported ${total - failed} · ${failed} skipped` : null) : `Importing ${completed}/${total}…`);
+    };
     try {
-      await importPhotoPaths(
-        paths,
-        center,
-        ({ total, completed, failed }) => {
-          onImportStatus(completed >= total ? (failed ? `Imported ${total - failed} · ${failed} skipped` : null) : `Importing ${completed}/${total}…`);
-        },
-        (_path, message) => console.warn(message),
-      );
+      if (isTauri()) {
+        await importPhotoPaths(selection as string[], center, report, (_path, message) => console.warn(message));
+      } else {
+        await importPhotoFiles(selection as File[], center, report, (_name, message) => console.warn(message));
+      }
     } catch (error) {
       console.error(error);
       onImportStatus('Photo import failed');

@@ -56,7 +56,12 @@ export class PhotoTexturePool {
 
     const generation = this.generation;
     let promise: Promise<Texture>;
-    promise = this.withSlot(() => Assets.load(url) as Promise<Texture>).then((texture: Texture) => {
+    // The web build serves photos from object URLs, which carry neither a file
+    // extension nor a data-URL MIME type — the two things the texture parser
+    // sniffs. Name the parser explicitly so those loads resolve; the cache is
+    // still keyed on `url`, so `unload(url)` keeps working either way.
+    const source = url.startsWith('blob:') ? { src: url, loadParser: 'loadTextures' } : url;
+    promise = this.withSlot(() => Assets.load(source) as Promise<Texture>).then((texture: Texture) => {
       if (generation !== this.generation) {
         throw new Error('Texture load was superseded by a renderer reset');
       }

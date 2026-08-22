@@ -112,6 +112,17 @@ npm run build
 | Shift + Arrow | Nudge 10px |
 | Delete / Backspace | Delete selection |
 
+## Web build
+
+The same bundle runs in a plain browser at [flow.c0di.com](https://flow.c0di.com). Every native call is guarded by `isTauri()`, and the browser gets its own photo pipeline:
+
+- Photos come in through a file input or a drag-and-drop onto the canvas.
+- Derivatives are generated with `createImageBitmap` + canvas at the same 1600/420/160 edges the Rust importer uses.
+- Blobs are stored in IndexedDB (`flow.webAssets.v1`) and referenced from the board as `webphoto:<id>:<variant>` keys, so board JSON in localStorage stays small.
+- Orphaned blobs are collected on startup, mirroring the native `cleanup_orphan_assets` pass.
+
+Deploy with `npm run build && npx wrangler deploy` (see [`wrangler.jsonc`](wrangler.jsonc)).
+
 ## Architecture
 
 - `src/board/CanvasEngine.ts` — Pixi renderer, input, culling/LOD and selection affordances
