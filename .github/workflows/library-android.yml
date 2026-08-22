@@ -176,7 +176,7 @@ jobs:
       - name: Upload APK for Library
         uses: actions/upload-artifact@v4
         with:
-          name: library-unsigned-apk-${{ needs.release-check.outputs.version }}
+          name: library-unsigned-apk
           path: library-output/flow-release-unsigned.apk
           if-no-files-found: error
           retention-days: 14
