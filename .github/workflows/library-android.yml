@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   release-check:
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, nucchuck]
     timeout-minutes: 5
     outputs:
       should_build: ${{ steps.version.outputs.should_build }}
@@ -96,7 +96,7 @@ jobs:
   build-library-apk:
     needs: release-check
     if: needs.release-check.outputs.should_build == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, linux, nucchuck]
     timeout-minutes: 45
     env:
       CI: "true"
